@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Stock In/Out Management</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet"/>
+  <style>
+    .remove-row-btn {
+      cursor: pointer;
+      color: red;
+      font-weight: bold;
+    }
+  </style>
+</head>
+<body>
+  <nav class="navbar navbar-expand-lg navbar-dark bg-dark px-4">
+    <a class="navbar-brand" href="/">Inventory System</a>
+    <div class="collapse navbar-collapse">
+      <ul class="navbar-nav ms-auto">
+        <li class="nav-item"><a class="nav-link {% if request.endpoint == 'home' %}active fw-bold text-warning{% endif %}" href="{{ url_for('home') }}">Home</a></li>
+        <li class="nav-item"><a class="nav-link {% if request.endpoint == 'product' %}active fw-bold text-warning{% endif %}" href="{{ url_for('product') }}">Products</a></li>
+        <li class="nav-item"><a class="nav-link {% if request.endpoint == 'customer' %}active fw-bold text-warning{% endif %}" href="{{ url_for('customer') }}">Customers</a></li>
+        <li class="nav-item"><a class="nav-link {% if request.endpoint == 'stockinout' %}active fw-bold text-warning{% endif %}" href="{{ url_for('stockinout') }}">Stock</a></li>
+        <li class="nav-item"><a class="nav-link {% if request.endpoint == 'report' %}active fw-bold text-warning{% endif %}" href="{{ url_for('report') }}">Reports</a></li>
+      </ul>
+    </div>
+  </nav>
+
+  <div class="container py-4">
+    <h2 class="mb-4">Stock In/Out Management</h2>
+
+    <!-- Stock In Form -->
+    <div class="card mb-4">
+      <div class="card-header bg-primary text-white">Stock In</div>
+      <div class="card-body">
+        <form id="stockInForm">
+          <div id="stockInContainer"></div>
+          <button type="button" class="btn btn-sm btn-outline-primary mb-3" onclick="addStockRow('stockInContainer')">+ Add Row</button>
+          <div class="d-flex align-items-end">
+            <button type="submit" class="btn btn-success me-2">Add Stock</button>
+            <button type="reset" class="btn btn-secondary">Clear</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- Stock Out Form -->
+    <div class="card mb-4">
+      <div class="card-header bg-danger text-white">Stock Out</div>
+      <div class="card-body">
+        <form id="stockOutForm">
+          <div id="stockOutContainer"></div>
+          <button type="button" class="btn btn-sm btn-outline-danger mb-3" onclick="addStockRow('stockOutContainer')">+ Add Row</button>
+          <div class="d-flex align-items-end">
+            <button type="submit" class="btn btn-danger me-2">Remove Stock</button>
+            <button type="reset" class="btn btn-secondary">Clear</button>
+          </div>
+        </form>
+        <div id="stockOutErrorMessage" class="alert alert-danger mt-3" style="display:none;"></div>
+      </div>
+    </div>
+
+    <!-- Transaction History -->
+    <div class="card">
+      <div class="card-header bg-info text-white">Transaction History</div>
+      <div class="card-body">
+        <div class="table-responsive">
+          <table class="table table-bordered table-hover">
+            <thead class="table-dark">
+              <tr>
+                <th>Date</th>
+                <th>Product</th>
+                <th>Qty</th>
+                <th>Type</th>
+                <th>Customer</th>
+                <th>Total Price ₹</th>
+              </tr>
+            </thead>
+            <tbody id="transactionHistory">
+              <tr><td colspan="6" class="text-center">Loading...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <footer class="text-center p-3 bg-dark text-light mt-4">
+    &copy; 2025 Inventory & Stock Management System
+  </footer>
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+  <script>
+    let products = [];
+    let customers = [];
+
+    async function loadData() {
+      try {
+        const [productRes, customerRes, transactionRes] = await Promise.all([
+          fetch('/get_products'),
+          fetch('/get_customers'),
+          fetch('/get_transactions')
+        ]);
+
+        const [productData, customerData, transactionData] = await Promise.all([
+          productRes.json(),
+          customerRes.json(),
+          transactionRes.json()
+        ]);
+
+        products = productData.products;
+        customers = customerData.customers;
+
+        console.log("Transactions Data:", transactionData); // 🔍 Debug
+
+        addStockRow('stockInContainer');
+        addStockRow('stockOutContainer');
+
+        const tbody = document.getElementById('transactionHistory');
+        tbody.innerHTML = ""; // Clear old content
+
+        if (!transactionData.transactions || transactionData.transactions.length === 0) {
+          tbody.innerHTML = `<tr><td colspan="6" class="text-center">No transactions yet.</td></tr>`;
+        } else {
+          transactionData.transactions.forEach(tx => {
+            const row = document.createElement('tr');
+            const total = parseFloat(tx.total_price);
+            row.innerHTML = `
+              <td>${tx.transaction_date}</td>
+              <td>${tx.product_name}</td>
+              <td>${tx.quantity}</td>
+              <td>${tx.transaction_type}</td>
+              <td>${tx.customer_name}</td>
+              <td>₹${!isNaN(total) ? total.toFixed(2) : '0.00'}</td>
+            `;
+            tbody.appendChild(row);
+          });
+        }
+
+      } catch (error) {
+        console.error("Error loading data:", error);
+        document.getElementById('transactionHistory').innerHTML = `<tr><td colspan="6" class="text-center text-danger">Error loading transaction history</td></tr>`;
+      }
+    }
+
+    function addStockRow(containerId) {
+      const container = document.getElementById(containerId);
+      const row = document.createElement('div');
+      row.classList.add('row', 'g-3', 'mb-2');
+      row.innerHTML = `
+        <div class="col-md-2">
+          <select class="form-select customer-id" onchange="updateName(this)" required>
+            <option value="">Customer ID</option>
+            ${customers.map(c => `<option value="${c.customer_id}">${c.customer_id}</option>`).join('')}
+          </select>
+        </div>
+        <div class="col-md-2">
+          <input type="text" class="form-control customer-name" placeholder="Customer Name" readonly>
+        </div>
+        <div class="col-md-3">
+          <select class="form-select product-id" required>
+            <option value="">Select Product</option>
+            ${products.map(p => `<option value="${p.id}">${p.product_name}</option>`).join('')}
+          </select>
+        </div>
+        <div class="col-md-2">
+          <input type="number" class="form-control quantity" min="1" placeholder="Qty" required>
+        </div>
+        <div class="col-md-2">
+          <input type="number" class="form-control price" min="0" step="0.01" placeholder="Unit Price ₹" required>
+        </div>
+        <div class="col-md-1 d-flex align-items-center">
+          <span class="remove-row-btn">&times;</span>
+        </div>
+      `;
+      container.appendChild(row);
+    }
+
+    function updateName(select) {
+      const row = select.closest('.row');
+      const nameInput = row.querySelector('.customer-name');
+      const customer = customers.find(c => c.customer_id === select.value);
+      nameInput.value = customer ? customer.customer_name : '';
+    }
+
+    document.addEventListener("DOMContentLoaded", () => {
+      loadData();
+
+      ['stockInContainer', 'stockOutContainer'].forEach(id => {
+        document.getElementById(id).addEventListener('click', function(e) {
+          if (e.target && e.target.classList.contains('remove-row-btn')) {
+            e.target.closest('.row').remove();
+          }
+        });
+      });
+
+      document.getElementById('stockInForm').addEventListener('submit', e => {
+        e.preventDefault();
+        try {
+          const rows = document.querySelectorAll('#stockInContainer .row');
+          const items = Array.from(rows).map(row => {
+            const productId = row.querySelector('.product-id').value;
+            const customerId = row.querySelector('.customer-id').value;
+            const customerName = row.querySelector('.customer-name').value;
+            const qty = parseInt(row.querySelector('.quantity').value);
+            const price = parseFloat(row.querySelector('.price').value);
+
+            if (!productId || !customerId || !customerName || isNaN(qty) || isNaN(price)) {
+              throw new Error("Please fill all fields correctly.");
+            }
+
+            return { product_id: productId, customer_id: customerId, customer_name: customerName, quantity: qty, price: price };
+          });
+
+          fetch('/stock_in_bulk', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ items })
+          })
+          .then(res => res.json())
+          .then(data => {
+            alert(data.message);
+            if (data.message === "Stock In transactions successful") {
+              location.reload();
+            }
+          });
+        } catch (err) {
+          alert(err.message);
+        }
+      });
+
+      document.getElementById('stockOutForm').addEventListener('submit', async e => {
+        e.preventDefault();
+        const errorBox = document.getElementById('stockOutErrorMessage');
+        errorBox.style.display = 'none';
+
+        try {
+          const rows = document.querySelectorAll('#stockOutContainer .row');
+          const items = Array.from(rows).map(row => {
+            const productId = row.querySelector('.product-id').value;
+            const customerId = row.querySelector('.customer-id').value;
+            const customerName = row.querySelector('.customer-name').value;
+            const qty = parseInt(row.querySelector('.quantity').value);
+            const price = parseFloat(row.querySelector('.price').value);
+
+            if (!productId || !customerId || !customerName || isNaN(qty) || isNaN(price)) {
+              throw new Error("Please fill all fields correctly.");
+            }
+
+            return { product_id: productId, customer_id: customerId, customer_name: customerName, quantity: qty, price: price };
+          });
+
+          const response = await fetch('/stock_out_bulk', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ items })
+          });
+
+          const data = await response.json();
+
+          if (data.message === "Stock Out transactions successful") {
+            alert(data.message);
+            location.reload();
+          } else {
+            throw new Error(data.error || data.message || "Unknown error occurred.");
+          }
+
+        } catch (err) {
+          errorBox.textContent = err.message;
+          errorBox.style.display = 'block';
+        }
+      });
+    });
+  </script>
+</body>
+</html>
